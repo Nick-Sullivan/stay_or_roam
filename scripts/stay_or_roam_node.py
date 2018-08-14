@@ -3,6 +3,7 @@ import rospy
 import math
 import tf2_ros
 import tf.transformations
+import random
 from nav_msgs.msg          import Odometry,Path
 from geometry_msgs.msg     import Twist,PoseStamped
 from stay_or_roam.msg      import Task,RobotState,AuctionAnnouncement
@@ -11,6 +12,7 @@ from auction import performAuction
 class stay_or_roam_node:
   COMPLETING_TASKS        = 1 #moving to waypoints
   AUCTIONING              = 2 #waiting for others to confirm
+  SEARCHING               = 3 #finding tasks
   FINISHED                = 4 #we're done
   
   def __init__(self):
@@ -19,7 +21,6 @@ class stay_or_roam_node:
     self.pubs()
     self.tf_buffer   = tf2_ros.Buffer()
     self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-    #rospy.Timer(rospy.Duration(5), self.timerHeartbeat, oneshot=False)
 
   def params(self):
     self.robot_id       = rospy.get_param('~robot_id', 0)
@@ -32,21 +33,36 @@ class stay_or_roam_node:
     self.baselink_frame = rospy.get_param('~baselink_frame', "base_link")
     self.auction_time   = rospy.get_param('~auction_time', 3)
     self.detection_dist = rospy.get_param('~detection_dist', 20)
+    seed                = rospy.get_param('~seed', 0)
+    self.x_low = 0
+    self.x_high = 100
+    self.y_low = 0
+    self.y_high = 100
+    generate_wp    = rospy.get_param('~generate_wp', False)
+    num_wp         = rospy.get_param('~num_wp', 10)
     waypoints = rospy.get_param('~waypoints', -1)
-    if len(waypoints) % 2 > 0:
-      print("Incorrect waypoint parameter.")
-      return
-    print("Waypoints are: ")
-    print(waypoints)
     self.x = []
     self.y = []
-    x    = waypoints[0::2]
-    y    = waypoints[1::2]
+    random.seed(seed) #so all robots create the same tasks.
+    if generate_wp:
+      x = []
+      y = []
+      for i in range(0, num_wp):
+        x.append( random.randint(self.x_low, self.x_high) )
+        y.append( random.randint(self.y_low, self.y_high) )
+    else:
+      if len(waypoints) % 2 > 0:
+        print("Incorrect waypoint parameter.")
+        return
+      #print("Waypoints are: ")
+      #print(waypoints)
+      x    = waypoints[0::2]
+      y    = waypoints[1::2]
     self.wp   = 0
     self.robot_state = RobotState()
     self.robot_state.robot_id = self.robot_id
-    self.robot_state.state = self.COMPLETING_TASKS
     self.robot_state.pose.header.frame_id = self.baselink_frame
+    self.startSearching()
     for i in range(0, len(x)):
       task = Task()
       task.task_id = i
@@ -119,9 +135,9 @@ class stay_or_roam_node:
       m.header.frame_id = self.map_frame
       m.pose.position = t.point
       m.pose.orientation.w = 1
-      m.scale.x = 1
-      m.scale.y = 1
-      m.scale.z = 1
+      m.scale.x = 2
+      m.scale.y = 2
+      m.scale.z = 2
       m.color.r = 1
       m.color.g = 1
       m.color.b = 1
@@ -135,13 +151,14 @@ class stay_or_roam_node:
     dx = self.robot_state.pose.pose.position.x - pose.position.x
     dy = self.robot_state.pose.pose.position.y - pose.position.y
     dist = math.sqrt( dx*dx + dy*dy )
+    #print("dist: " + str(dist))
     return dist
     
   def timerHeartbeat(self, event):
     self.publishRobotState()
     
   def publishRobotState(self):
-    print("Publishing State " + str(self.robot_id))
+    #print("Publishing State " + str(self.robot_id))
     #print(self.robot_state)
     self.pub_state.publish(self.robot_state)
     
@@ -150,28 +167,41 @@ class stay_or_roam_node:
       return
     if self.getDist(msg.pose.pose) > self.detection_dist:
       return
-    print("Received another robots state " + str(self.robot_id))
+    #print("Received another robots state " + str(self.robot_id))
+    #print("My state " + str(self.robot_state.state))
+    #print("*****HERES WHAT I KNOW********")
+    #print(self.robot_state.tasks)
+    #print("*****HERES WHAT THEY KNOW*******")
+    #print(msg.tasks)
     # Extract task information.
     auction = False
-    for t, t_new in zip(self.robot_state.tasks,msg.tasks):
+    for i in range(0,len(msg.tasks)):
+      t     = self.robot_state.tasks[i]
+      t_new = msg.tasks[i]
+    #for t, t_new in zip(self.robot_state.tasks,msg.tasks):
       if not t.known and t_new.known:
-        t.known = True
+        self.robot_state.tasks[i] = t_new
         auction = True
       if not t.completed and t_new.completed:
-        t.completed = True
+        self.robot_state.tasks[i].completed = True
       if t.allocated_robot_id == self.robot_id and t_new.allocated_robot_id == msg.robot_id:
         auction = True
+        self.robot_state.tasks[i].allocated_robot_id=-1
+    #print("*****HERES WHAT I KNOW NOW********")
+    #print(self.robot_state.tasks)
+    #print("*****")
     # Maybe start an auction.
     if self.robot_state.state == self.AUCTIONING:
       return
     if auction or msg.state == self.AUCTIONING:
+      #print("BLOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOP " + str(self.robot_id) + ","+str(self.robot_state.state))
       self.requestAuction()
-    
+      
   def requestAuction(self):
     print("Starting an auction! " + str(self.robot_id))
     # Stop moving.
-    cmd_vel = Twist()
-    self.pub_vel.publish(cmd_vel)
+    #cmd_vel = Twist()
+    #self.pub_vel.publish(cmd_vel)
     # Announce desire for auction.
     self.publishRobotState()
     self.auction_ids = [self.robot_id]
@@ -188,8 +218,8 @@ class stay_or_roam_node:
     msg.auction_ids = self.auction_ids
     msg.poses = self.auction_poses
     self.pub_auction_announcement.publish(msg)
-    print("Announcing auction " + str(self.robot_id))
-    print(msg)
+    #print("Announcing auction " + str(self.robot_id))
+    #print(msg)
   
   # Update robots in auction. If any robots are new, re-announce.
   def subscribeAuctionAnnouncement(self, msg):
@@ -197,14 +227,14 @@ class stay_or_roam_node:
       return
     if self.getDist(msg.robot_pose.pose) > self.detection_dist:
       return
-    print("Received auction announcement " + str(self.robot_id))
+    #print("Received auction announcement " + str(self.robot_id))
     if not self.robot_state.state == self.AUCTIONING:
       self.auction_ids   = [self.robot_id]
       self.auction_poses = [self.robot_state.pose]
     announce = False
     for r,p in zip(msg.auction_ids,msg.poses):
       if r not in self.auction_ids:
-        print("Adding ourselves to the auction ids " + str(self.robot_id) + " " + str(r) + " " + str(p))
+        #print("Adding ourselves to the auction ids " + str(self.robot_id) + " " + str(r) + " " + str(p))
         self.auction_ids.append(r)
         self.auction_poses.append(p)
         announce = True
@@ -213,13 +243,13 @@ class stay_or_roam_node:
       self.publishAuctionAnnouncement()
 
   def subscribeAuctionAllocation(self, msg):
-    print("My state is: " + str(self.robot_state.state))
+    #print("My state is: " + str(self.robot_state.state))
     if not self.robot_state.state == self.AUCTIONING:
       return
     if self.getDist(msg.pose.pose) > self.detection_dist:
       return
     print("Received my allocations! " + str(self.robot_id))
-    self.robot_state.state = self.COMPLETING_TASKS
+    self.robot_state.tasks = msg.tasks
     self.wp = 0
     num_tasks_for_us = 0
     for t in msg.tasks:
@@ -236,11 +266,19 @@ class stay_or_roam_node:
     print(self.x)
     print(self.y)
     if num_tasks_for_us == 0:
-      self.robot_state.state = self.FINISHED
+      self.startSearching()
+    else:
+      self.robot_state.state = self.COMPLETING_TASKS
     # Publish allocations to propagate
     self.pub_auction_allocation.publish(self.robot_state)
     
   ###### Task allocation ######
+  
+  def startSearching(self):
+    self.xsearch = random.randint(self.x_low,self.x_high)
+    self.ysearch = random.randint(self.y_low,self.y_high)
+    self.robot_state.state = self.SEARCHING
+    print("Search location " + str(self.robot_id) +","+str(self.xsearch)+" "+str(self.ysearch))
 
   def allocateTasks(self):
     tasks = performAuction(self.auction_ids, self.auction_poses, self.robot_state.tasks)
@@ -265,10 +303,8 @@ class stay_or_roam_node:
     while ang > pi:
       ang = ang - 2*pi
     return ang
-
-  ###### Main functions ######
-  def loop(self):
-    # Update the robot state.
+    
+  def updateState(self):
     tup = self.lookupXYYaw()   #(True,x,y,yaw,quat) or (False,0,0,0)
     if not tup[0]:
       return
@@ -281,6 +317,16 @@ class stay_or_roam_node:
     self.robot_state.pose.pose.orientation.y = quat[1]
     self.robot_state.pose.pose.orientation.z = quat[2]
     self.robot_state.pose.pose.orientation.w = quat[3]
+    return tup
+    
+  ###### Main functions ######
+  def loop(self):
+    # Update the robot state.
+    tup = self.updateState()
+    
+    if self.robot_state.state == self.FINISHED:
+      return
+    
     # If we're within range of a task, we learn about it.
     auction = False
     for t in self.robot_state.tasks:
@@ -292,6 +338,10 @@ class stay_or_roam_node:
       if dist < self.detection_dist:
         t.known = True
         auction = True 
+    # If we want an auction, start one.
+    if auction and not self.robot_state.state == self.AUCTIONING:
+      self.requestAuction()
+          
     # If we're waiting for the auction to start, don't do anything else.
     if self.robot_state.state == self.AUCTIONING:
       for ids in self.auction_ids:
@@ -300,15 +350,59 @@ class stay_or_roam_node:
       if rospy.get_rostime() > self.auction_start_time:
         # Start the auction.
         print("I'M THE AUCTIONEER " + str(self.robot_id))
-        print(self.robot_id)
         # Allocate the tasks.
         self.allocateTasks()
         #self.robot_state.state = self.SENDING_ALLOCATIONS
-    # If we want an auction, start one.
-    if auction:
-      self.requestAuction()
-    # Complete tasks.
+        
+    
+    
+    # If we're searching, pick a random point.
+    if self.robot_state.state == self.SEARCHING:
+      dx = self.xsearch - tup[1]
+      dy = self.ysearch - tup[2]
+      dist = math.sqrt( dx*dx + dy*dy )
+      dang = math.atan2( dy, dx ) - tup[3]
+      dang = self.wrapToPi(dang)
+      # Calculate the command velocity.
+      x_vel = self.lin_vel
+      dang_abs = math.sqrt(dang*dang)
+      if dang_abs > 0.5:
+        yaw_vel = self.ang_vel
+      else:
+        yaw_vel = self.ang_vel*(dang_abs/0.5)
+      if dang < 0:
+        yaw_vel = -yaw_vel
+      # Publish it.
+      cmd_vel = Twist()
+      cmd_vel.linear.x = x_vel
+      cmd_vel.angular.z = yaw_vel
+      self.pub_vel.publish(cmd_vel)
+      # Check for random point completion.
+      if dist <= self.dist_req:
+        self.startSearching()
+      # If all tasks are completed, we're done.
+      completed = True
+      all_tasks_completed = True
+      for t in self.robot_state.tasks:
+        if not t.known:
+          completed = False
+        if not t.completed and t.allocated_robot_id == -1:
+          completed = False
+        if not t.completed:
+          all_tasks_completed = False
+      if completed:
+        self.robot_state.state = self.FINISHED
+      if all_tasks_completed:
+        print("ALL TASKS ARE DONE")
+        self.end_time = rospy.get_rostime()
+        d = self.end_time - self.start_time
+        sec = d.to_sec()
+        print(sec)
+        
+    # If we're completing a task, do it.
     if self.robot_state.state == self.COMPLETING_TASKS:
+      if self.wp >= len(self.x):
+        return
       # Calculate the distance and angle change needed.
       dx = self.x[self.wp] - tup[1]
       dy = self.y[self.wp] - tup[2]
@@ -337,22 +431,29 @@ class stay_or_roam_node:
       self.pub_vel.publish(cmd_vel)
       # Check for waypoint completion.
       if dist <= self.dist_req:
-        print("Waypoint completed")
+        #print("Waypoint completed")
         self.robot_state.tasks[self.task_order[self.wp]].completed = True
         self.wp = self.wp + 1
         if self.wp == len(self.x):
-          print("Finished")
-          self.robot_state.state = self.FINISHED
-        else:
-          print("Moving to next waypoint")
+          #print("Searching")
+          self.startSearching()
     #elif self.robot_state.state == self.FINISHED:
       # do nothing.
+    
 
 if __name__ == '__main__':
   rospy.init_node('stay_or_roam_node', anonymous=True)
   obj = stay_or_roam_node()
+  # Let the system start up.
   rospy.sleep(obj.start_delay)
-  rospy.Timer(rospy.Duration(0.5), obj.timerPublishPaths, oneshot=False)
+  obj.updateState()
+  rospy.sleep(1)
+  # Start the time.
+  obj.start_time = rospy.get_rostime()
+  
+  # Timers for regular publishing.
+  rospy.Timer(rospy.Duration(0.2), obj.timerPublishPaths, oneshot=False)
+  rospy.Timer(rospy.Duration(1), obj.timerHeartbeat, oneshot=False)
   r = rospy.Rate(30)  #Hz
   while not rospy.is_shutdown():
     obj.loop()

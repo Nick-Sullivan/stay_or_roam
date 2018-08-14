@@ -10,47 +10,49 @@
   </include>
   <include file="$(find multi_jackal_base)/launch/jackal_base.launch">
     <arg name="ns"             value="jackal0"/>
+    <arg name="use_global_tf"  value="false"/>
+    <arg name="use_global_ekf" value="true"/>
+    <arg name="x"              value="0"/>
+    <arg name="y"              value="50"/>
   </include>
   <include file="$(find multi_jackal_base)/launch/jackal_base.launch">
     <arg name="ns"             value="jackal1"/>
-    <arg name="x"              value="20"/>
+    <arg name="use_global_tf"  value="false"/>
+    <arg name="use_global_ekf" value="true"/>
+    <arg name="x"              value="100"/>
+    <arg name="y"              value="50"/>
+    <arg name="yaw"            value="3.1415"/>
   </include>
   
   <!-- Launch StayOrRoam. Waypoint order is [x, y]. -->
-  <arg name="detection_dist" default="11"/>
-  <arg name="auction_time"   default="1"/>
+  <arg name="detection_dist" default="40"/>
+  <arg name="auction_time"   default="0.2"/>
   <arg name="lin_vel"        default="2"/>
   <arg name="ang_vel"        default="2"/>
+  <arg name="num_wp"         default="50"/>
+  <arg name="seed"           default="0"/>
   
   <node ns="jackal0" pkg="stay_or_roam" type="stay_or_roam_node.py" 
         name="stay_or_roam" output="screen">
-    <rosparam param="waypoints">[ 0,   0,
-                                 10,  10,
-                                 20,  10,
-                                 20, -10,
-                                  0, -10]</rosparam>
-    <!--<rosparam param="waypoints">[ 0,   0,
-                                 10,  10]</rosparam>-->
     <param name="baselink_frame"     value="jackal0/base_link"/>
     <param name="robot_id"           value="0"/>
+    <param name="generate_wp"        value="true"/>
+    <param name="num_wp"             value="$(arg num_wp)"/>
     <param name="detection_dist"     value="$(arg detection_dist)"/>
     <param name="auction_time"       value="$(arg auction_time)"/>
+    <param name="seed"               value="$(arg seed)"/>
     <param name="lin_vel"            value="$(arg lin_vel)"/>
     <param name="ang_vel"            value="$(arg ang_vel)"/>
   </node>
   <node ns="jackal1" pkg="stay_or_roam" type="stay_or_roam_node.py" 
         name="stay_or_roam" output="screen">
-    <rosparam param="waypoints">[ 0,   0,
-                                 10,  10,
-                                 20,  10,
-                                 20, -10,
-                                  0, -10]</rosparam>
-    <!--<rosparam param="waypoints">[ 0,   0,
-                                 10,  10]</rosparam>-->
     <param name="baselink_frame"     value="jackal1/base_link"/>
     <param name="robot_id"           value="1"/>
+    <param name="generate_wp"        value="true"/>
+    <param name="num_wp"             value="$(arg num_wp)"/>
     <param name="detection_dist"     value="$(arg detection_dist)"/>
     <param name="auction_time"       value="$(arg auction_time)"/>
+    <param name="seed"               value="$(arg seed)"/>
     <param name="lin_vel"            value="$(arg lin_vel)"/>
     <param name="ang_vel"            value="$(arg ang_vel)"/>
   </node>   
@@ -62,7 +64,7 @@
   <!-- Display on RVIZ. -->
   <group if="true">
     <node name="rviz" pkg="rviz" type="rviz"
-        args="-d $(find stay_or_roam)/config/rviz2.rviz">
+        args="-d $(find stay_or_roam)/config/rviz3.rviz">
     </node>
   </group>  
   

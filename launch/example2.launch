@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <!-- Creates a Jackal in Gazebo. -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui"          value="false"/>
+    <arg name="world_name"   value="$(find multi_jackal_tutorials)/worlds/empty.world"/>
+  </include>
+  <include file="$(find multi_jackal_base)/launch/jackal_base.launch">
+    <arg name="ns"             value="jackal0"/>
+  </include>
+  <include file="$(find multi_jackal_base)/launch/jackal_base.launch">
+    <arg name="ns"             value="jackal1"/>
+    <arg name="x"              value="20"/>
+  </include>
+  
+  <!-- Launch StayOrRoam. Waypoint order is [x, y]. -->
+  <arg name="detection_dist" default="12"/>
+  <arg name="auction_time"   default="1"/>
+  <arg name="lin_vel"        default="2"/>
+  <arg name="ang_vel"        default="2"/>
+  
+  <node ns="jackal0" pkg="stay_or_roam" type="stay_or_roam_node.py" 
+        name="stay_or_roam" output="screen">
+    <rosparam param="waypoints">[ 0,   0,
+                                 10,  10,
+                                 20,  10,
+                                 20, -10,
+                                  0, -10]</rosparam>
+    <!--<rosparam param="waypoints">[ 0,   0,
+                                 10,  10]</rosparam>-->
+    <param name="baselink_frame"     value="jackal0/base_link"/>
+    <param name="robot_id"           value="0"/>
+    <param name="detection_dist"     value="$(arg detection_dist)"/>
+    <param name="auction_time"       value="$(arg auction_time)"/>
+    <param name="lin_vel"            value="$(arg lin_vel)"/>
+    <param name="ang_vel"            value="$(arg ang_vel)"/>
+  </node>
+  <node ns="jackal1" pkg="stay_or_roam" type="stay_or_roam_node.py" 
+        name="stay_or_roam" output="screen">
+    <rosparam param="waypoints">[ 0,   0,
+                                 10,  10,
+                                 20,  10,
+                                 20, -10,
+                                  0, -10]</rosparam>
+    <!--<rosparam param="waypoints">[ 0,   0,
+                                 10,  10]</rosparam>-->
+    <param name="baselink_frame"     value="jackal1/base_link"/>
+    <param name="robot_id"           value="1"/>
+    <param name="detection_dist"     value="$(arg detection_dist)"/>
+    <param name="auction_time"       value="$(arg auction_time)"/>
+    <param name="lin_vel"            value="$(arg lin_vel)"/>
+    <param name="ang_vel"            value="$(arg ang_vel)"/>
+  </node>   
+     
+  <!-- Create a transformation. -->
+  <!--<node pkg="tf" type="static_transform_publisher" name="static_map_odom_tf"
+        args="0 0 0 0 0 0 map base_link 100"/>-->
+  
+  <!-- Display on RVIZ. -->
+  <group if="true">
+    <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find stay_or_roam)/config/rviz2.rviz">
+    </node>
+  </group>  
+  
+</launch>

@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <!-- Creates a Jackal in Gazebo. -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui"          value="false"/>
+    <arg name="world_name"   value="$(find multi_jackal_tutorials)/worlds/empty.world"/>
+  </include>
+  <include file="$(find multi_jackal_base)/launch/jackal_base.launch">
+    <arg name="ns"             value="jackal0"/>
+  </include>
+  
+  <!-- Launch StayOrRoam. Waypoint order is [x, y]. -->
+  <node ns="jackal0" pkg="stay_or_roam" type="stay_or_roam_node.py" 
+        name="stay_or_roam" output="screen">
+    <rosparam param="waypoints">[ 0,   0,
+                                 10,  10,
+                                 20,  10,
+                                 20, -10,
+                                  0, -10]</rosparam>
+    <!--<rosparam param="waypoints">[ 0,   0,
+                                 10,  10]</rosparam>-->
+    <param name="baselink_frame"     value="jackal0/base_link"/>
+    <param name="lin_vel"            value="2"/>
+    <param name="ang_vel"            value="2"/>
+  </node>
+     
+     
+  <!-- Create a transformation. -->
+  <!--<node pkg="tf" type="static_transform_publisher" name="static_map_odom_tf"
+        args="0 0 0 0 0 0 map base_link 100"/>-->
+  
+  <!-- Display on RVIZ. -->
+  <group if="true">
+    <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find stay_or_roam)/config/rviz.rviz">
+    </node>
+  </group>  
+  
+</launch>
